@@ -6,6 +6,7 @@ import CurrencyFormat from "react-currency-format";
 import { useStateValue } from "./StateProvider";
 import { Link,useHistory } from "react-router-dom";
 import { CardElement, useElements, useStripe } from "@stripe/react-stripe-js";
+import { db } from "./firebase";
 
 function Payment() {
   const [{ basket, user }, dispatch] = useStateValue();
@@ -13,8 +14,8 @@ function Payment() {
   const stripe = useStripe();
   const elements = useElements();
 
-  const [processing, setProcessing] = useState(true);
-  const [succeeded, setSucceeded] = useState("");
+  const [processing, setProcessing] = useState("");
+  const [succeeded, setSucceeded] = useState(false);
   const [ error, setError ] = useState(null);
   const [ disabled, setDisabled ] = useState(true);
   const [ clientSecret, setclientSecret ]= useState(true);
@@ -30,8 +31,6 @@ function Payment() {
   // 
   useEffect(async () => {
     const getClientSecret = async ()=>{
-      // let url = 'http://localhost:5001/clone-2ff3e/us-central1/api/payments/create?total=' + getTotalBasket();
-      // console.log(url);
       const response = await axios({
         method: 'post',
         url: 'http://localhost:5001/clone-2ff3e/us-central1/api/payments/create?total=' + (getTotalBasket()*1000),
@@ -43,6 +42,7 @@ function Payment() {
   },{basket});
   console.log('THE SECRET IS >>>>',clientSecret);
 
+  console.log(user);
 
   const handleSubmit = async (event) => {
     
@@ -51,15 +51,39 @@ function Payment() {
 
     const payload = await stripe.confirmCardPayment(clientSecret,{
       payment_method: {
-        card: elements.getElement(CardElement) 
+        card: elements.getElement(CardElement),
       }
-    }).then(({paymentIntent}) => {
+    }).then(function(result) {
+      console.log("RESULT");
+      console.log(result);
+
+      console.log(result.error.payment_intent.amount);
+      console.log(result.error.payment_intent.created);
+      console.log(result.error.payment_intent.id);
+      console.log(user?.uid);
+      const items = basket.map((obj)=> {return Object.assign({}, obj)});
+
+      console.log(items);
+        db.collection('users')
+        .doc(user?.uid)
+        .collection('orders')
+        .doc(result.error.payment_intent.id)
+        .set({
+          basket: items,
+          amount: result.error.payment_intent.amount,
+          created: result.error.payment_intent.created
+        })
+
         setSucceeded(true);
         setError(null);
         setProcessing(false);
 
+        dispatch({
+          type:"EMPTY_BASKET"
+        });
+
         history.replace('/orders');
-    })
+    });
   };
 
   const handleChange = (event) => {
@@ -104,7 +128,9 @@ function Payment() {
           </div>
         </div>
         <div className="payment__section">
-          <h3>Payment Method</h3>
+          <div className="payment__title">
+            <h3>Payment Method</h3>
+          </div>
           <div className="payment__details">
             <form onSubmit={handleSubmit}>
               <CardElement onChange={handleChange} />
